@@ -14,7 +14,9 @@ from cachetools.func import ttl_cache
 
 from nvitop.core.libnvml import nvml
 from nvitop.core.process import GpuProcess
-from nvitop.core.utils import NA, NaType, Snapshot, bytes2human, utilization2string, memoize_when_activated
+from nvitop.core.utils import (NA, NaType, Snapshot,
+                               bytes2human, utilization2string, boolify,
+                               memoize_when_activated)
 
 
 __all__ = ['Device', 'PhysicalDevice', 'MigDevice', 'CudaDevice']
@@ -220,6 +222,7 @@ class Device(object):  # pylint: disable=too-many-instance-attributes,too-many-p
         self._bus_id = NA
         self._memory_total = NA
         self._memory_total_human = NA
+        self._is_mig_device = None
         self._cuda_index = None
 
         if index is not None:
@@ -556,6 +559,13 @@ class Device(object):  # pylint: disable=too-many-instance-attributes,too-many-p
             nvml.NVML_COMPUTEMODE_EXCLUSIVE_PROCESS: 'Exclusive Process',
         }.get(nvml.nvmlQuery('nvmlDeviceGetComputeMode', self.handle), NA)
 
+    def is_mig_device(self) -> bool:
+        if self._is_mig_device is None:
+            is_mig_device = nvml.nvmlQuery('nvmlDeviceIsMigDeviceHandle', self.handle,
+                                           default=False, ignore_function_not_found=True)
+            self._is_mig_device = bool(is_mig_device)  # nvmlDeviceIsMigDeviceHandle returns c_uint
+        return self._is_mig_device
+
     @ttl_cache(ttl=2.0)
     def processes(self) -> Dict[int, GpuProcess]:
         processes = {}
@@ -704,6 +714,9 @@ class PhysicalDevice(Device):
                                   default=(NA, NA), ignore_function_not_found=True)[0]
         return {0: 'Disabled', 1: 'Enabled'}.get(mig_mode, NA)
 
+    def is_mig_mode_enabled(self) -> bool:
+        return boolify(self.mig_mode())
+
     def max_mig_device_count(self) -> int:
         return nvml.nvmlQuery('nvmlDeviceGetMaxMigDeviceCount', self.handle,
                               default=0, ignore_function_not_found=True)
@@ -711,7 +724,7 @@ class PhysicalDevice(Device):
     def mig_devices(self) -> List['MigDevice']:
         mig_devices = []
 
-        if self.mig_mode() == 'Enabled':
+        if self.is_mig_mode_enabled():
             for mig_index in range(self.max_mig_device_count()):
                 try:
                     mig_device = MigDevice(index=(self.index, mig_index))
@@ -751,6 +764,7 @@ class MigDevice(Device):  # pylint: disable=too-many-instance-attributes
         self._bus_id = NA
         self._memory_total = NA
         self._memory_total_human = NA
+        self._is_mig_device = None
         self._cuda_index = None
 
         if index is not None:

@@ -10,6 +10,8 @@ import threading
 from types import FunctionType
 from typing import Tuple, Callable, Union, Optional, Any
 
+# Python Bindings for the NVIDIA Management Library (NVML)
+# https://pypi.org/project/nvidia-ml-py
 import pynvml
 
 from nvitop.core.utils import NA
